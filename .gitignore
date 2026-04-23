@@ -1,0 +1,35 @@
+# Runtime outputs (requested)
+images/
+datasets/
+
+# Python environment and caches
+.venv/
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Logs and local temp files
+*.log
+*.tmp
+*.temp
+
+# Editor / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

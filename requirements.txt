@@ -1,0 +1,9 @@
+playwright
+httpx
+python-dateutil
+tenacity
+ultralytics
+opencv-python
+numpy
+flask
+

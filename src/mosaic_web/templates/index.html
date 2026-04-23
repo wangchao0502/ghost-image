@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Photo Mosaic Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>照片马赛克生成器</h1>
+      <p class="hint">上传主照片后，可选择“本地小图目录路径（推荐）”或上传小图目录，点击生成即可得到马赛克效果图（预览采用分层瓦片加载）。</p>
+
+      <form id="mosaic-form">
+        <label class="field-label">
+          <span>主照片（1 张）</span>
+          <span class="field-name">main_photo</span>
+        </label>
+        <input id="main-photo-input" type="file" name="main_photo" accept="image/*" required />
+
+        <label class="field-label">
+          <span>本地小图目录路径（推荐，避免 413）</span>
+          <span class="field-name">tile_dir</span>
+        </label>
+        <input
+          id="tile-dir-input"
+          type="text"
+          name="tile_dir"
+          value="datasets/full_202604222337/images"
+          placeholder="例如：datasets/full_202604222337/images"
+          autocomplete="off"
+        />
+        <p class="sub-hint">本地调试建议填相对项目根目录路径；填写后将优先使用该目录，不走上传。</p>
+
+        <label class="field-label">
+          <span>小照片目录上传（可选）</span>
+          <span class="field-name">tile_photos</span>
+        </label>
+        <input
+          id="tile-photos-input"
+          type="file"
+          name="tile_photos"
+          accept="image/*"
+          webkitdirectory
+          directory
+          mozdirectory
+          multiple
+        />
+        <p class="sub-hint">仅当未填写“本地小图目录路径”时才需要上传；请使用“选择文件夹”。</p>
+
+        <div class="grid">
+          <div class="param-item">
+            <label class="field-label"><span>网格列数（20-200）</span><span class="field-name">grid_cols</span></label>
+            <input type="number" name="grid_cols" min="20" max="200" value="180" />
+          </div>
+          <div class="param-item">
+            <label class="field-label"><span>小块尺寸像素（8-80）</span><span class="field-name">tile_size</span></label>
+            <input type="number" name="tile_size" min="8" max="80" value="12" />
+          </div>
+          <div class="param-item">
+            <label class="field-label"
+              ><span>主图叠加比例（0-80）</span><span class="field-name">overlay_percent</span></label
+            >
+            <input type="number" name="overlay_percent" min="0" max="80" value="12" />
+          </div>
+          <div class="param-item">
+            <label class="field-label"
+              ><span>均衡用图强度（0-0.3）</span><span class="field-name">diversity_strength</span></label
+            >
+            <input type="number" name="diversity_strength" min="0" max="0.3" step="0.01" value="0.04" />
+          </div>
+          <div class="param-item">
+            <label class="field-label"><span>单图最大复用次数（0=不限）</span><span class="field-name">max_reuse</span></label>
+            <input type="number" name="max_reuse" min="0" max="1000" value="4" />
+          </div>
+          <div class="param-item">
+            <label class="field-label"><span>清晰度锐化（0-2）</span><span class="field-name">sharpen_amount</span></label>
+            <input type="number" name="sharpen_amount" min="0" max="2" step="0.05" value="0.35" />
+          </div>
+          <div class="param-item">
+            <label class="field-label"
+              ><span>匹配块尺寸（推荐 12-24）</span><span class="field-name">match_tile_size</span></label
+            >
+            <input type="number" name="match_tile_size" min="4" max="128" value="16" />
+          </div>
+          <div class="param-item span-2">
+            <label class="field-label"
+              ><span>预览瓦片渲染尺寸（推荐 64-96）</span><span class="field-name">preview_tile_size</span></label
+            >
+            <input type="number" name="preview_tile_size" min="16" max="256" value="96" />
+          </div>
+        </div>
+
+        <button type="submit">生成马赛克</button>
+      </form>
+
+      <p id="status"></p>
+
+      <section id="result" class="hidden">
+        <h2>生成结果</h2>
+        <a id="download-link" download>下载图片</a>
+        <div id="compare-section" class="hidden">
+          <div class="compare-header">
+            <strong>原图对比</strong>
+            <span id="compare-percent">50%</span>
+          </div>
+          <input id="compare-slider" type="range" min="0" max="100" value="50" />
+          <div id="compare-view">
+            <img id="compare-original" alt="original image" />
+            <div id="compare-overlay">
+              <img id="compare-mosaic" alt="mosaic image" />
+            </div>
+          </div>
+        </div>
+        <div class="preview-toolbar">
+          <button id="zoom-out" type="button">-</button>
+          <button id="zoom-in" type="button">+</button>
+          <button id="zoom-reset" type="button">适配窗口</button>
+          <button id="zoom-full" type="button">一键全图</button>
+          <button id="preview-fullscreen" type="button">全屏预览</button>
+          <button id="focus-save" type="button">设为起点</button>
+          <button id="focus-play" type="button">播放到全图</button>
+          <button id="focus-play-fullscreen" type="button">全屏播放</button>
+          <label class="inline-field">
+            <span>时长</span>
+            <input id="focus-duration" type="number" min="2" max="30" step="1" value="8" />
+            <span>s</span>
+          </label>
+          <input id="zoom-slider" type="range" min="1" max="1200" step="1" value="100" />
+          <span id="zoom-level">100%</span>
+        </div>
+        <p class="sub-hint">鼠标滚轮缩放（Ctrl+滚轮更细粒度），双击快速放大/还原，按住空格可进入临时拖拽模式；全屏下按 Enter 可播放。</p>
+        <p id="preview-info" class="sub-hint">坐标: -, - | 像素: -</p>
+        <p id="perf-info" class="sub-hint">FPS: - | 长帧(>22ms): -</p>
+        <div id="preview-viewport" aria-label="mosaic preview">
+          <canvas id="preview-canvas"></canvas>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const form = document.getElementById("mosaic-form");
+      const mainPhotoInput = document.getElementById("main-photo-input");
+      const statusEl = document.getElementById("status");
+      const resultEl = document.getElementById("result");
+      const compareSectionEl = document.getElementById("compare-section");
+      const compareSliderEl = document.getElementById("compare-slider");
+      const comparePercentEl = document.getElementById("compare-percent");
+      const compareOriginalEl = document.getElementById("compare-original");
+      const compareMosaicEl = document.getElementById("compare-mosaic");
+      const compareOverlayEl = document.getElementById("compare-overlay");
+      const tilePhotosInput = document.getElementById("tile-photos-input");
+      const tileDirInput = document.getElementById("tile-dir-input");
+      const downloadLink = document.getElementById("download-link");
+      const viewportEl = document.getElementById("preview-viewport");
+      const canvasEl = document.getElementById("preview-canvas");
+      const zoomLevelEl = document.getElementById("zoom-level");
+      const zoomSliderEl = document.getElementById("zoom-slider");
+      const zoomInBtn = document.getElementById("zoom-in");
+      const zoomOutBtn = document.getElementById("zoom-out");
+      const zoomResetBtn = document.getElementById("zoom-reset");
+      const zoomFullBtn = document.getElementById("zoom-full");
+      const previewFullscreenBtn = document.getElementById("preview-fullscreen");
+      const focusSaveBtn = document.getElementById("focus-save");
+      const focusPlayBtn = document.getElementById("focus-play");
+      const focusPlayFullscreenBtn = document.getElementById("focus-play-fullscreen");
+      const focusDurationInput = document.getElementById("focus-duration");
+      const previewInfoEl = document.getElementById("preview-info");
+      const perfInfoEl = document.getElementById("perf-info");
+      const ctx = canvasEl.getContext("2d");
+
+      const previewState = {
+        image: null,
+        zoom: 1,
+        minZoom: 0.01,
+        maxZoom: 12,
+        offsetX: 0,
+        offsetY: 0,
+        dragging: false,
+        lastX: 0,
+        lastY: 0,
+        offscreenCanvas: null,
+        offscreenCtx: null,
+        spacePressed: false,
+        tileSource: null,
+        tileCache: new Map(),
+        pendingTiles: new Set(),
+        savedFocus: null,
+        animating: false,
+        animationFrame: 0,
+        renderFrame: 0,
+        canvasCssWidth: 0,
+        canvasCssHeight: 0,
+        canvasDpr: 0,
+        lastRenderTs: 0,
+        smoothFps: 0,
+        totalFrames: 0,
+        longFrames: 0,
+      };
+
+      const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+      function updateZoomLabel() {
+        zoomLevelEl.textContent = `${Math.round(previewState.zoom * 100)}%`;
+      }
+
+      function syncZoomSlider() {
+        zoomSliderEl.value = String(Math.round(previewState.zoom * 100));
+      }
+
+      function getCurrentView() {
+        return {
+          zoom: previewState.zoom,
+          offsetX: previewState.offsetX,
+          offsetY: previewState.offsetY,
+        };
+      }
+
+      function applyView(view) {
+        previewState.zoom = clamp(view.zoom, previewState.minZoom, previewState.maxZoom);
+        previewState.offsetX = view.offsetX;
+        previewState.offsetY = view.offsetY;
+        updateZoomLabel();
+        syncZoomSlider();
+        requestDraw();
+      }
+
+      function updatePointerInfo(clientX, clientY) {
+        if (!previewState.image || !previewState.offscreenCtx) {
+          previewInfoEl.textContent = "坐标: -, - | 像素: -";
+          return;
+        }
+
+        const rect = viewportEl.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        const sourceWidth = previewState.tileSource?.width || previewState.image.width;
+        const sourceHeight = previewState.tileSource?.height || previewState.image.height;
+        const imageX = Math.floor((x - previewState.offsetX) / previewState.zoom);
+        const imageY = Math.floor((y - previewState.offsetY) / previewState.zoom);
+        const isInside =
+          imageX >= 0 &&
+          imageY >= 0 &&
+          imageX < sourceWidth &&
+          imageY < sourceHeight;
+
+        if (!isInside) {
+          previewInfoEl.textContent = "坐标: -, - | 像素: -";
+          return;
+        }
+
+        const sampleX = clamp(Math.floor((imageX / sourceWidth) * previewState.image.width), 0, previewState.image.width - 1);
+        const sampleY = clamp(Math.floor((imageY / sourceHeight) * previewState.image.height), 0, previewState.image.height - 1);
+        const pixel = previewState.offscreenCtx.getImageData(sampleX, sampleY, 1, 1).data;
+        previewInfoEl.textContent = `坐标: ${imageX}, ${imageY} | 像素: rgb(${pixel[0]}, ${pixel[1]}, ${pixel[2]})`;
+      }
+
+      function resizeCanvasToViewport() {
+        const width = Math.max(1, viewportEl.clientWidth);
+        const height = Math.max(1, viewportEl.clientHeight);
+        const dpr = window.devicePixelRatio || 1;
+        if (
+          width === previewState.canvasCssWidth &&
+          height === previewState.canvasCssHeight &&
+          dpr === previewState.canvasDpr
+        ) {
+          return { width, height };
+        }
+
+        canvasEl.width = Math.round(width * dpr);
+        canvasEl.height = Math.round(height * dpr);
+        canvasEl.style.width = `${width}px`;
+        canvasEl.style.height = `${height}px`;
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        previewState.canvasCssWidth = width;
+        previewState.canvasCssHeight = height;
+        previewState.canvasDpr = dpr;
+        return { width, height };
+      }
+
+      function constrainOffsets() {
+        if (!previewState.image) {
+          return;
+        }
+        const width = Math.max(1, viewportEl.clientWidth);
+        const height = Math.max(1, viewportEl.clientHeight);
+        const sourceWidth = previewState.tileSource?.width || previewState.image.width;
+        const sourceHeight = previewState.tileSource?.height || previewState.image.height;
+        const drawW = sourceWidth * previewState.zoom;
+        const drawH = sourceHeight * previewState.zoom;
+
+        if (drawW <= width) {
+          previewState.offsetX = (width - drawW) / 2;
+        } else {
+          previewState.offsetX = clamp(previewState.offsetX, width - drawW, 0);
+        }
+
+        if (drawH <= height) {
+          previewState.offsetY = (height - drawH) / 2;
+        } else {
+          previewState.offsetY = clamp(previewState.offsetY, height - drawH, 0);
+        }
+      }
+
+      function drawPreviewNow() {
+        const { width, height } = resizeCanvasToViewport();
+        ctx.clearRect(0, 0, width, height);
+
+        if (!previewState.image) {
+          return;
+        }
+
+        constrainOffsets();
+        const drawW = previewState.image.width * previewState.zoom;
+        const drawH = previewState.image.height * previewState.zoom;
+        if (previewState.tileSource && previewState.tileSource.levels && previewState.tileSource.levels.length > 0) {
+          drawTiledPreview(width, height);
+          return;
+        }
+
+        ctx.imageSmoothingEnabled = previewState.zoom < 1;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(previewState.image, previewState.offsetX, previewState.offsetY, drawW, drawH);
+      }
+
+      function requestDraw() {
+        if (previewState.renderFrame) {
+          return;
+        }
+        previewState.renderFrame = requestAnimationFrame((now) => {
+          previewState.renderFrame = 0;
+          updatePerfStats(now);
+          drawPreviewNow();
+        });
+      }
+
+      function resetPerfStats() {
+        previewState.lastRenderTs = 0;
+        previewState.smoothFps = 0;
+        previewState.totalFrames = 0;
+        previewState.longFrames = 0;
+        perfInfoEl.textContent = "FPS: - | 长帧(>22ms): -";
+      }
+
+      function updatePerfStats(now) {
+        if (!previewState.image) {
+          return;
+        }
+        if (!previewState.lastRenderTs) {
+          previewState.lastRenderTs = now;
+          return;
+        }
+        const deltaMs = now - previewState.lastRenderTs;
+        previewState.lastRenderTs = now;
+        if (deltaMs <= 0) {
+          return;
+        }
+
+        const instantFps = 1000 / deltaMs;
+        previewState.smoothFps = previewState.smoothFps
+          ? previewState.smoothFps * 0.85 + instantFps * 0.15
+          : instantFps;
+        previewState.totalFrames += 1;
+        if (deltaMs > 22) {
+          previewState.longFrames += 1;
+        }
+        const jankRate = previewState.totalFrames
+          ? (previewState.longFrames / previewState.totalFrames) * 100
+          : 0;
+        perfInfoEl.textContent = `FPS: ${Math.round(previewState.smoothFps)} | 长帧(>22ms): ${previewState.longFrames} (${jankRate.toFixed(1)}%)`;
+      }
+
+      function pickBestTileLevel() {
+        const source = previewState.tileSource;
+        if (!source || !source.levels || source.levels.length === 0) {
+          return null;
+        }
+        const targetScale = clamp(previewState.zoom, source.levels[0].scale, 1);
+        let best = source.levels[0];
+        let bestScore = Number.POSITIVE_INFINITY;
+        for (const level of source.levels) {
+          const score = Math.abs(Math.log(level.scale) - Math.log(targetScale));
+          if (score < bestScore) {
+            bestScore = score;
+            best = level;
+          }
+        }
+        return best;
+      }
+
+      function getTileCacheKey(jobId, level, x, y) {
+        return `${jobId}|${level}|${x}|${y}`;
+      }
+
+      function requestTile(levelMeta, x, y) {
+        const source = previewState.tileSource;
+        if (!source) {
+          return;
+        }
+        const key = getTileCacheKey(source.job_id, levelMeta.level, x, y);
+        if (previewState.tileCache.has(key) || previewState.pendingTiles.has(key)) {
+          return;
+        }
+
+        previewState.pendingTiles.add(key);
+        const img = new Image();
+        img.onload = () => {
+          previewState.pendingTiles.delete(key);
+          previewState.tileCache.set(key, img);
+          if (previewState.tileCache.size > 4000) {
+            const firstKey = previewState.tileCache.keys().next().value;
+            if (firstKey) {
+              previewState.tileCache.delete(firstKey);
+            }
+          }
+          requestDraw();
+        };
+        img.onerror = () => {
+          previewState.pendingTiles.delete(key);
+        };
+        const ext = source.format === "png" ? "png" : "jpg";
+        img.src = `/tile/${source.job_id}/${levelMeta.level}/${x}/${y}.${ext}`;
+      }
+
+      function drawTiledPreview(viewportWidth, viewportHeight) {
+        const source = previewState.tileSource;
+        const levelMeta = pickBestTileLevel();
+        if (!source || !levelMeta) {
+          return;
+        }
+
+        // Fallback background while target tiles are still loading.
+        const sourceWidth = source.width || previewState.image.width;
+        const sourceHeight = source.height || previewState.image.height;
+        ctx.imageSmoothingEnabled = previewState.zoom < 1;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(
+          previewState.image,
+          previewState.offsetX,
+          previewState.offsetY,
+          sourceWidth * previewState.zoom,
+          sourceHeight * previewState.zoom,
+        );
+
+        const scale = levelMeta.scale;
+        const tileSize = source.tile_size;
+        const fullLeft = (0 - previewState.offsetX) / previewState.zoom;
+        const fullTop = (0 - previewState.offsetY) / previewState.zoom;
+        const fullRight = (viewportWidth - previewState.offsetX) / previewState.zoom;
+        const fullBottom = (viewportHeight - previewState.offsetY) / previewState.zoom;
+
+        const levelLeft = fullLeft * scale;
+        const levelTop = fullTop * scale;
+        const levelRight = fullRight * scale;
+        const levelBottom = fullBottom * scale;
+
+        const minTileX = clamp(Math.floor(levelLeft / tileSize), 0, levelMeta.cols - 1);
+        const maxTileX = clamp(Math.floor(levelRight / tileSize), 0, levelMeta.cols - 1);
+        const minTileY = clamp(Math.floor(levelTop / tileSize), 0, levelMeta.rows - 1);
+        const maxTileY = clamp(Math.floor(levelBottom / tileSize), 0, levelMeta.rows - 1);
+
+        const shouldRequestMissingTiles = !previewState.animating;
+        ctx.imageSmoothingEnabled = false;
+        for (let ty = minTileY; ty <= maxTileY; ty += 1) {
+          for (let tx = minTileX; tx <= maxTileX; tx += 1) {
+            const key = getTileCacheKey(source.job_id, levelMeta.level, tx, ty);
+            const tile = previewState.tileCache.get(key);
+            if (!tile) {
+              if (shouldRequestMissingTiles) {
+                requestTile(levelMeta, tx, ty);
+              }
+              continue;
+            }
+
+            const levelX = tx * tileSize;
+            const levelY = ty * tileSize;
+            const tileW = Math.min(tileSize, levelMeta.width - levelX);
+            const tileH = Math.min(tileSize, levelMeta.height - levelY);
+
+            const fullX = levelX / scale;
+            const fullY = levelY / scale;
+            const fullW = tileW / scale;
+            const fullH = tileH / scale;
+
+            const screenX = previewState.offsetX + fullX * previewState.zoom;
+            const screenY = previewState.offsetY + fullY * previewState.zoom;
+            const screenW = fullW * previewState.zoom;
+            const screenH = fullH * previewState.zoom;
+            const drawX = screenX;
+            const drawY = screenY;
+            const drawW = Math.max(0.5, screenW + 0.25);
+            const drawH = Math.max(0.5, screenH + 0.25);
+            ctx.drawImage(tile, 0, 0, tileW, tileH, drawX, drawY, drawW, drawH);
+          }
+        }
+      }
+
+      function fitToViewport() {
+        if (!previewState.image) {
+          return;
+        }
+        const width = Math.max(1, viewportEl.clientWidth);
+        const height = Math.max(1, viewportEl.clientHeight);
+        const sourceWidth = previewState.tileSource?.width || previewState.image.width;
+        const sourceHeight = previewState.tileSource?.height || previewState.image.height;
+        const fitZoom = Math.min(width / sourceWidth, height / sourceHeight, 1);
+
+        // Keep enough zoom-out room for very large outputs.
+        previewState.minZoom = Math.max(0.005, Math.min(fitZoom, 0.01));
+        zoomSliderEl.min = String(Math.max(1, Math.floor(previewState.minZoom * 100)));
+
+        previewState.zoom = clamp(fitZoom, previewState.minZoom, previewState.maxZoom);
+        previewState.offsetX = (width - sourceWidth * previewState.zoom) / 2;
+        previewState.offsetY = (height - sourceHeight * previewState.zoom) / 2;
+        updateZoomLabel();
+        syncZoomSlider();
+        requestDraw();
+      }
+
+      function getFitView() {
+        const width = Math.max(1, viewportEl.clientWidth);
+        const height = Math.max(1, viewportEl.clientHeight);
+        const sourceWidth = previewState.tileSource?.width || previewState.image?.width || 1;
+        const sourceHeight = previewState.tileSource?.height || previewState.image?.height || 1;
+        const fitZoom = Math.min(width / sourceWidth, height / sourceHeight, 1);
+        const minZoom = Math.max(0.005, Math.min(fitZoom, 0.01));
+        const zoom = clamp(fitZoom, minZoom, previewState.maxZoom);
+        return {
+          minZoom,
+          zoom,
+          offsetX: (width - sourceWidth * zoom) / 2,
+          offsetY: (height - sourceHeight * zoom) / 2,
+        };
+      }
+
+      function easeInOutCubic(t) {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      }
+
+      function stopFocusAnimation() {
+        if (previewState.animationFrame) {
+          cancelAnimationFrame(previewState.animationFrame);
+          previewState.animationFrame = 0;
+        }
+        previewState.animating = false;
+        focusPlayBtn.textContent = "播放到全图";
+        requestDraw();
+      }
+
+      function playFocusToFullAnimation(durationSec) {
+        if (!previewState.image) {
+          return;
+        }
+        stopFocusAnimation();
+        const start = previewState.savedFocus || getCurrentView();
+        const fit = getFitView();
+        previewState.minZoom = fit.minZoom;
+        zoomSliderEl.min = String(Math.max(1, Math.floor(previewState.minZoom * 100)));
+        const end = { zoom: fit.zoom, offsetX: fit.offsetX, offsetY: fit.offsetY };
+        const startAt = performance.now();
+        const durationMs = clamp((Number(durationSec) || 8) * 1000, 2000, 30000);
+        previewState.animating = true;
+        focusPlayBtn.textContent = "播放中...";
+
+        const tick = (now) => {
+          const elapsed = now - startAt;
+          const t = clamp(elapsed / durationMs, 0, 1);
+          const k = easeInOutCubic(t);
+          applyView({
+            zoom: start.zoom + (end.zoom - start.zoom) * k,
+            offsetX: start.offsetX + (end.offsetX - start.offsetX) * k,
+            offsetY: start.offsetY + (end.offsetY - start.offsetY) * k,
+          });
+          if (t < 1 && previewState.animating) {
+            previewState.animationFrame = requestAnimationFrame(tick);
+          } else {
+            stopFocusAnimation();
+          }
+        };
+        previewState.animationFrame = requestAnimationFrame(tick);
+      }
+
+      async function playFocusInFullscreen(durationSec) {
+        if (!previewState.image) {
+          return;
+        }
+        try {
+          if (document.fullscreenElement !== viewportEl) {
+            await viewportEl.requestFullscreen();
+          }
+          playFocusToFullAnimation(durationSec);
+        } catch (error) {
+          statusEl.textContent = "当前浏览器不支持全屏播放。";
+          playFocusToFullAnimation(durationSec);
+        }
+      }
+
+      function zoomAt(clientX, clientY, nextZoom) {
+        if (!previewState.image) {
+          return;
+        }
+        const rect = viewportEl.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+        const previousZoom = previewState.zoom;
+        const clampedZoom = clamp(nextZoom, previewState.minZoom, previewState.maxZoom);
+        if (clampedZoom === previousZoom) {
+          return;
+        }
+
+        const imageX = (x - previewState.offsetX) / previousZoom;
+        const imageY = (y - previewState.offsetY) / previousZoom;
+
+        previewState.zoom = clampedZoom;
+        previewState.offsetX = x - imageX * clampedZoom;
+        previewState.offsetY = y - imageY * clampedZoom;
+        updateZoomLabel();
+        syncZoomSlider();
+        requestDraw();
+      }
+
+      function toggleZoomAt(clientX, clientY) {
+        if (!previewState.image) {
+          return;
+        }
+        const targetZoom = previewState.zoom < 1.8 ? 2.0 : 1.0;
+        zoomAt(clientX, clientY, targetZoom);
+      }
+
+      function loadImage(url) {
+        return new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error("结果图片加载失败"));
+          image.src = `${url}?t=${Date.now()}`;
+        });
+      }
+
+      function ensureDirectorySelection() {
+        if ((tileDirInput.value || "").trim()) {
+          return true;
+        }
+
+        const files = Array.from(tilePhotosInput.files || []);
+        if (files.length === 0) {
+          statusEl.textContent = "请填写本地小图目录路径，或上传一个小图目录。";
+          return false;
+        }
+        const fromDirectory = files.some((file) => (file.webkitRelativePath || "").includes("/"));
+        if (fromDirectory) {
+          return true;
+        }
+
+        tilePhotosInput.value = "";
+        statusEl.textContent = "请通过“选择文件夹”导入小照片目录，不要单独选择文件。";
+        return false;
+      }
+
+      function setCompareRatio(percent) {
+        const clamped = clamp(Number(percent) || 0, 0, 100);
+        compareOverlayEl.style.width = `${clamped}%`;
+        comparePercentEl.textContent = `${clamped}%`;
+      }
+
+      compareSliderEl.addEventListener("input", () => {
+        setCompareRatio(compareSliderEl.value);
+      });
+
+      tilePhotosInput.addEventListener("change", ensureDirectorySelection);
+
+      viewportEl.addEventListener("wheel", (event) => {
+        if (!previewState.image) {
+          return;
+        }
+        event.preventDefault();
+        stopFocusAnimation();
+        const baseFactor = event.ctrlKey ? 1.05 : 1.12;
+        const scaleFactor = event.deltaY < 0 ? baseFactor : 1 / baseFactor;
+        zoomAt(event.clientX, event.clientY, previewState.zoom * scaleFactor);
+      });
+
+      viewportEl.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        stopFocusAnimation();
+        toggleZoomAt(event.clientX, event.clientY);
+      });
+
+      viewportEl.addEventListener("mousedown", (event) => {
+        if (!previewState.image || event.button !== 0 || !previewState.spacePressed) {
+          return;
+        }
+        event.preventDefault();
+        previewState.dragging = true;
+        previewState.lastX = event.clientX;
+        previewState.lastY = event.clientY;
+        viewportEl.classList.add("is-dragging");
+      });
+
+      window.addEventListener("mousemove", (event) => {
+        if (!previewState.dragging) {
+          return;
+        }
+        stopFocusAnimation();
+        const dx = event.clientX - previewState.lastX;
+        const dy = event.clientY - previewState.lastY;
+        previewState.lastX = event.clientX;
+        previewState.lastY = event.clientY;
+        previewState.offsetX += dx;
+        previewState.offsetY += dy;
+        requestDraw();
+      });
+      viewportEl.addEventListener("mousemove", (event) => {
+        updatePointerInfo(event.clientX, event.clientY);
+      });
+      viewportEl.addEventListener("mouseleave", () => {
+        previewInfoEl.textContent = "坐标: -, - | 像素: -";
+      });
+
+      window.addEventListener("mouseup", () => {
+        previewState.dragging = false;
+        viewportEl.classList.remove("is-dragging");
+      });
+
+      zoomInBtn.addEventListener("click", () => {
+        const rect = viewportEl.getBoundingClientRect();
+        zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, previewState.zoom * 1.2);
+      });
+
+      zoomOutBtn.addEventListener("click", () => {
+        const rect = viewportEl.getBoundingClientRect();
+        zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, previewState.zoom / 1.2);
+      });
+
+      zoomResetBtn.addEventListener("click", fitToViewport);
+      zoomFullBtn.addEventListener("click", fitToViewport);
+      previewFullscreenBtn.addEventListener("click", async () => {
+        try {
+          if (document.fullscreenElement === viewportEl) {
+            await document.exitFullscreen();
+          } else {
+            await viewportEl.requestFullscreen();
+          }
+        } catch (error) {
+          statusEl.textContent = "当前浏览器不支持全屏预览。";
+        }
+      });
+      document.addEventListener("fullscreenchange", () => {
+        const inFullscreen = document.fullscreenElement === viewportEl;
+        previewFullscreenBtn.textContent = inFullscreen ? "退出全屏" : "全屏预览";
+        requestDraw();
+      });
+      focusSaveBtn.addEventListener("click", () => {
+        if (!previewState.image) {
+          return;
+        }
+        previewState.savedFocus = getCurrentView();
+        statusEl.textContent = "已记录当前聚焦视角。";
+      });
+      focusPlayBtn.addEventListener("click", () => {
+        if (!previewState.image) {
+          return;
+        }
+        playFocusToFullAnimation(focusDurationInput.value);
+      });
+      focusPlayFullscreenBtn.addEventListener("click", () => {
+        if (!previewState.image) {
+          return;
+        }
+        playFocusInFullscreen(focusDurationInput.value);
+      });
+      zoomSliderEl.addEventListener("input", () => {
+        stopFocusAnimation();
+        const rect = viewportEl.getBoundingClientRect();
+        const nextZoom = Number(zoomSliderEl.value) / 100;
+        zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, nextZoom);
+      });
+      window.addEventListener("resize", requestDraw);
+      window.addEventListener("keydown", (event) => {
+        const targetTag = event.target && event.target.tagName ? event.target.tagName.toUpperCase() : "";
+        const isFormField = ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(targetTag);
+
+        if (event.code === "Enter" && document.fullscreenElement === viewportEl) {
+          if (isFormField) {
+            return;
+          }
+          event.preventDefault();
+          playFocusToFullAnimation(focusDurationInput.value);
+          return;
+        }
+
+        if (event.code !== "Space") {
+          return;
+        }
+        if (isFormField) {
+          return;
+        }
+        event.preventDefault();
+        if (!previewState.spacePressed) {
+          previewState.spacePressed = true;
+          viewportEl.classList.add("is-space-pan");
+        }
+      });
+      window.addEventListener("keyup", (event) => {
+        if (event.code !== "Space") {
+          return;
+        }
+        previewState.spacePressed = false;
+        previewState.dragging = false;
+        viewportEl.classList.remove("is-dragging");
+        viewportEl.classList.remove("is-space-pan");
+      });
+      window.addEventListener("blur", () => {
+        previewState.spacePressed = false;
+        previewState.dragging = false;
+        viewportEl.classList.remove("is-dragging");
+        viewportEl.classList.remove("is-space-pan");
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        stopFocusAnimation();
+        if (!ensureDirectorySelection()) {
+          return;
+        }
+
+        statusEl.textContent = "正在生成，请稍候...";
+        resultEl.classList.add("hidden");
+        compareSectionEl.classList.add("hidden");
+
+        const formData = new FormData(form);
+        try {
+          const mainPhotoFile = mainPhotoInput.files && mainPhotoInput.files[0] ? mainPhotoInput.files[0] : null;
+          const originalUrl = mainPhotoFile ? URL.createObjectURL(mainPhotoFile) : "";
+          const response = await fetch("/generate", {
+            method: "POST",
+            body: formData,
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.error || "生成失败");
+          }
+
+          const image = await loadImage(payload.image_url);
+          previewState.image = image;
+          previewState.tileSource = payload.tile_source || null;
+          previewState.tileCache.clear();
+          previewState.pendingTiles.clear();
+          previewState.offscreenCanvas = document.createElement("canvas");
+          previewState.offscreenCanvas.width = image.width;
+          previewState.offscreenCanvas.height = image.height;
+          previewState.offscreenCtx = previewState.offscreenCanvas.getContext("2d", {
+            willReadFrequently: true,
+          });
+          previewState.offscreenCtx.drawImage(image, 0, 0);
+          resetPerfStats();
+          downloadLink.href = payload.image_url;
+          downloadLink.download = payload.download_name || "mosaic.jpg";
+
+          if (originalUrl) {
+            compareOriginalEl.src = originalUrl;
+            compareMosaicEl.src = payload.image_url;
+            compareSliderEl.value = "50";
+            setCompareRatio(50);
+            compareSectionEl.classList.remove("hidden");
+          }
+
+          fitToViewport();
+          previewState.savedFocus = getCurrentView();
+          stopFocusAnimation();
+          resultEl.classList.remove("hidden");
+          statusEl.textContent = "生成完成。";
+        } catch (error) {
+          statusEl.textContent = `错误：${error.message}`;
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,2 @@
+"""Weibo album crawler package."""
+
