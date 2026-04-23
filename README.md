@@ -6,6 +6,14 @@ Language docs:
 - English: `README.md`
 - Chinese: `README.zh-CN.md`
 
+## Demo
+Video:
+- [Watch demo video](assets/demo.mp4)
+
+Screenshots:
+![Web Demo 1](assets/web_1.png)
+![Web Demo 2](assets/web_2.png)
+
 ## Features
 - Connect to an existing logged-in browser session via CDP.
 - Human-like scroll rhythm and low-intensity request pacing.

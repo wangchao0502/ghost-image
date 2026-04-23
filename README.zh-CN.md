@@ -6,6 +6,14 @@ Language docs:
 - English: `README.md`
 - Chinese: `README.zh-CN.md`
 
+## 演示
+视频：
+- [查看演示视频](assets/demo.mp4)
+
+截图：
+![Web 演示 1](assets/web_1.png)
+![Web 演示 2](assets/web_2.png)
+
 ## 功能特性
 - 通过 CDP 连接已登录的浏览器会话。
 - 采用类人工滚动节奏与低频请求强度。
