@@ -2,6 +2,12 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT_DIR / "src"
+if SRC_DIR.as_posix() not in sys.path:
+    sys.path.insert(0, SRC_DIR.as_posix())
 
 from weibo_album_crawler.browser import connect_via_cdp
 from weibo_album_crawler.collector import stream_records_api_first

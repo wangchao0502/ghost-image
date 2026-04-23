@@ -103,10 +103,10 @@ Common options:
 Quick quality compare test (same account, 5 images per quality, metadata in-memory only):
 
 ```powershell
-python src/test_weibo_image_quality.py --album-url https://weibo.com/u/1000000001 --max-items 5 --qualities "large,mw690,orj360,orj1080"
+python test/test_weibo_image_quality.py --album-url https://weibo.com/u/1000000001 --max-items 5 --qualities "large,mw690,orj360,orj1080"
 ```
 
-Options for `src/test_weibo_image_quality.py`:
+Options for `test/test_weibo_image_quality.py`:
 - `--cdp-url` default `http://127.0.0.1:9222`
 - `--album-url` default `https://weibo.com/u/1000000001`
 - `--blogger-id` explicit numeric ID (optional if extractable from `--album-url`)

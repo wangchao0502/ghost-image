@@ -6,7 +6,11 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, (Path(__file__).resolve().parent).as_posix())
+ROOT_DIR = Path(__file__).resolve().parents[1]
+SRC_DIR = ROOT_DIR / "src"
+if SRC_DIR.as_posix() not in sys.path:
+    sys.path.insert(0, SRC_DIR.as_posix())
+
 import portrait_filter_crop as pfc
 
 

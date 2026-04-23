@@ -102,10 +102,10 @@ python src/main.py --cdp-url http://127.0.0.1:9333 --max-rounds 150
 图片质量对比测试（同账号、每档 5 张、仅内存元数据）：
 
 ```powershell
-python src/test_weibo_image_quality.py --album-url https://weibo.com/u/1000000001 --max-items 5 --qualities "large,mw690,orj360,orj1080"
+python test/test_weibo_image_quality.py --album-url https://weibo.com/u/1000000001 --max-items 5 --qualities "large,mw690,orj360,orj1080"
 ```
 
-`src/test_weibo_image_quality.py` 完整参数：
+`test/test_weibo_image_quality.py` 完整参数：
 - `--cdp-url` 默认 `http://127.0.0.1:9222`
 - `--album-url` 默认 `https://weibo.com/u/1000000001`
 - `--blogger-id` 显式数字 ID（若可从 `--album-url` 解析可省略）
